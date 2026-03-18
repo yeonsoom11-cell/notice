@@ -1004,6 +1004,59 @@
 
 <script>
 // ============================================================
+// CONFIG & STATE (최상단 선언 — 로그인보다 먼저)
+// ============================================================
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx32abv4v6HsOJQVxN1Ir1Bf1S3ZRNlBECTm4v74ETvf2FekO3xCd2vyuwm2CkKYRFL/exec';
+
+let config = {
+  scriptUrl: SCRIPT_URL,
+  sheetId: localStorage.getItem('gs_sheet_id') || ''
+};
+
+// 로컬에 저장된 URL이 있으면 그걸 우선 사용, 없으면 하드코딩된 URL 사용
+if (localStorage.getItem('gs_script_url')) {
+  config.scriptUrl = localStorage.getItem('gs_script_url');
+}
+
+const BOARDS = {
+  notice: {
+    label: '공지사항',
+    icon: '📢',
+    sheetName: '공지사항',
+    categories: ['교육', '안내', '변경사항', '업데이트 안내', '기타']
+  },
+  suggestion: {
+    label: '건의사항',
+    icon: '💡',
+    sheetName: '건의사항',
+    categories: ['서비스 개선', '업무 환경', '복리후생', '기타']
+  },
+  resource: {
+    label: '자료 및 양식',
+    icon: '📁',
+    sheetName: '자료및양식',
+    categories: ['사내 양식', '업무 자료', '교육 자료', '규정 및 지침', '기타']
+  }
+};
+
+let currentBoard = 'notice';
+let allPosts = [];
+let filteredPosts = [];
+let currentPage = 1;
+const PAGE_SIZE = 10;
+let currentDetailId = null;
+let pendingFiles = [];
+
+// ============================================================
+// SAMPLE DATA
+// ============================================================
+const samplePosts = {
+  notice: [],
+  suggestion: [],
+  resource: []
+};
+
+// ============================================================
 // LOGIN — Google Sheets 사용자 인증
 // ============================================================
 const ADMIN_PASSWORD = 'kumon-admin!!'; // ← 관리자 비밀번호
@@ -1177,52 +1230,6 @@ function logout() { sessionStorage.removeItem(SESSION_KEY); location.reload(); }
 
 // Check session on load
 checkSession();
-
-// ============================================================
-// CONFIG & STATE
-// ============================================================
-let config = {
-  scriptUrl: localStorage.getItem('gs_script_url') || '',
-  sheetId: localStorage.getItem('gs_sheet_id') || ''
-};
-
-const BOARDS = {
-  notice: {
-    label: '공지사항',
-    icon: '📢',
-    sheetName: '공지사항',
-    categories: ['교육', '안내', '변경사항', '업데이트 안내', '기타']
-  },
-  suggestion: {
-    label: '건의사항',
-    icon: '💡',
-    sheetName: '건의사항',
-    categories: ['서비스 개선', '업무 환경', '복리후생', '기타']
-  },
-  resource: {
-    label: '자료 및 양식',
-    icon: '📁',
-    sheetName: '자료및양식',
-    categories: ['사내 양식', '업무 자료', '교육 자료', '규정 및 지침', '기타']
-  }
-};
-
-let currentBoard = 'notice';
-let allPosts = [];
-let filteredPosts = [];
-let currentPage = 1;
-const PAGE_SIZE = 10;
-let currentDetailId = null;
-let pendingFiles = [];
-
-// ============================================================
-// SAMPLE DATA
-// ============================================================
-const samplePosts = {
-  notice: [],
-  suggestion: [],
-  resource: []
-};
 
 // ============================================================
 // SHOW APP (called after login success)
