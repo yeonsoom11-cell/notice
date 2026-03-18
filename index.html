@@ -1094,18 +1094,25 @@ async function checkName() {
       redirect: 'follow'
     });
     const text = await res.text();
-    const data = JSON.parse(text);
+    let data;
+    try { data = JSON.parse(text); }
+    catch(pe) {
+      console.error('JSON parse error:', text);
+      showStep('name');
+      document.getElementById('name-error').textContent = '서버 응답 오류. 관리자에게 문의하세요.';
+      return;
+    }
     if (data.success) {
       isNewUser = !data.exists;
       showPwStep(name, isNewUser);
     } else {
       showStep('name');
-      document.getElementById('name-error').textContent = '서버 오류: ' + (data.message || '다시 시도해주세요.');
+      document.getElementById('name-error').textContent = '오류: ' + (data.message || '다시 시도해주세요.');
     }
   } catch(e) {
     console.error('checkName error:', e);
     showStep('name');
-    document.getElementById('name-error').textContent = 'Sheets 연결 오류. 잠시 후 다시 시도해주세요.';
+    document.getElementById('name-error').textContent = 'Sheets 연결 오류: ' + e.message;
   }
 }
 
