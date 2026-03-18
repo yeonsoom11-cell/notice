@@ -1007,16 +1007,16 @@
 // CONFIG & STATE (최상단 선언 — 로그인보다 먼저)
 // ============================================================
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwQQHdLVjMlzbKI-6DZBBIgLAwR3jRn33luc81N1D4zFqeEyppZY2UUhEjq0Qx2r-W-/exec';
+const SHEET_ID = '15ghgoqwLR9Q4jDZxgBCKnlUErwBmejFoyg613GSO_-g';
 
 let config = {
   scriptUrl: SCRIPT_URL,
-  sheetId: localStorage.getItem('gs_sheet_id') || ''
+  sheetId: SHEET_ID
 };
 
-// 로컬에 저장된 URL이 있으면 그걸 우선 사용, 없으면 하드코딩된 URL 사용
-if (localStorage.getItem('gs_script_url')) {
-  config.scriptUrl = localStorage.getItem('gs_script_url');
-}
+// 로컬에 저장된 값이 있으면 우선 사용
+if (localStorage.getItem('gs_script_url')) config.scriptUrl = localStorage.getItem('gs_script_url');
+if (localStorage.getItem('gs_sheet_id')) config.sheetId = localStorage.getItem('gs_sheet_id');
 
 const BOARDS = {
   notice: {
