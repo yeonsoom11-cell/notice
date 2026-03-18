@@ -1006,7 +1006,7 @@
 // ============================================================
 // CONFIG & STATE (최상단 선언 — 로그인보다 먼저)
 // ============================================================
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw44xm4H0wiYO2sXzOPAq9OF-Fbn8NjNWgS7WKWjpsGjpJxbvuMO1I12X44W-Pdqe3G/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwQQHdLVjMlzbKI-6DZBBIgLAwR3jRn33luc81N1D4zFqeEyppZY2UUhEjq0Qx2r-W-/exec';
 
 let config = {
   scriptUrl: SCRIPT_URL,
@@ -1075,6 +1075,33 @@ function checkSession() {
   }
 }
 
+// ── JSONP 헬퍼 (CORS 우회) ──
+function jsonp(url) {
+  return new Promise((resolve, reject) => {
+    const cbName = 'cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    const script = document.createElement('script');
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error('timeout'));
+    }, 10000);
+    function cleanup() {
+      clearTimeout(timeout);
+      delete window[cbName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+    }
+    window[cbName] = (data) => { cleanup(); resolve(data); };
+    script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + cbName;
+    script.onerror = () => { cleanup(); reject(new Error('script load error')); };
+    document.head.appendChild(script);
+  });
+}
+
+// ── POST를 GET으로 변환 (JSONP용) ──
+function jsonpPost(url, data) {
+  const encoded = encodeURIComponent(JSON.stringify(data));
+  return jsonp(url + '?postData=' + encoded);
+}
+
 // Step 1: 이름 입력 후 Sheets에서 사용자 조회
 async function checkName() {
   const name = document.getElementById('name-input').value.trim();
@@ -1089,19 +1116,7 @@ async function checkName() {
   }
 
   try {
-    const res = await fetch(`${config.scriptUrl}?action=getUser&name=${encodeURIComponent(name)}`, {
-      method: 'GET',
-      redirect: 'follow'
-    });
-    const text = await res.text();
-    let data;
-    try { data = JSON.parse(text); }
-    catch(pe) {
-      console.error('JSON parse error:', text);
-      showStep('name');
-      document.getElementById('name-error').textContent = '서버 응답 오류. 관리자에게 문의하세요.';
-      return;
-    }
+    const data = await jsonp(`${config.scriptUrl}?action=getUser&name=${encodeURIComponent(name)}`);
     if (data.success) {
       isNewUser = !data.exists;
       showPwStep(name, isNewUser);
@@ -1181,26 +1196,14 @@ async function handlePwStep() {
     if (pw.length < 4) { setPwError('비밀번호는 4자 이상이어야 합니다.'); return; }
     showStep('loading');
     try {
-      const res = await fetch(config.scriptUrl, {
-        method: 'POST',
-        redirect: 'follow',
-        body: JSON.stringify({ action: 'registerUser', name, password: pw }),
-        headers: { 'Content-Type': 'text/plain' }
-      });
-      const text = await res.text();
-      const data = JSON.parse(text);
+      const data = await jsonp(`${config.scriptUrl}?action=registerUser&name=${encodeURIComponent(name)}&password=${encodeURIComponent(pw)}`);
       if (data.success) { loginSuccess(name, false); }
       else { showStep('pw'); setPwError('등록 실패: ' + (data.message || '다시 시도해주세요.')); }
-    } catch(e) { console.error('register error:', e); showStep('pw'); setPwError('서버 연결 오류. 다시 시도해주세요.'); }
+    } catch(e) { console.error('register error:', e); showStep('pw'); setPwError('서버 연결 오류: ' + e.message); }
   } else {
     showStep('loading');
     try {
-      const res = await fetch(`${config.scriptUrl}?action=getUser&name=${encodeURIComponent(name)}`, {
-        method: 'GET',
-        redirect: 'follow'
-      });
-      const text = await res.text();
-      const data = JSON.parse(text);
+      const data = await jsonp(`${config.scriptUrl}?action=getUser&name=${encodeURIComponent(name)}`);
       showStep('pw');
       if (data.success && data.exists && data.password === pw) {
         localStorage.removeItem('board_lock');
@@ -1219,7 +1222,7 @@ async function handlePwStep() {
         document.getElementById('pw-input').value = '';
         setTimeout(() => document.getElementById('pw-input').classList.remove('error'), 600);
       }
-    } catch(e) { console.error('login error:', e); showStep('pw'); setPwError('서버 연결 오류. 다시 시도해주세요.'); }
+    } catch(e) { console.error('login error:', e); showStep('pw'); setPwError('서버 연결 오류: ' + e.message); }
   }
 }
 
@@ -1334,19 +1337,14 @@ function switchBoard(board) {
 async function loadPosts() {
   if (config.scriptUrl) {
     try {
-      const url = `${config.scriptUrl}?action=get&sheet=${encodeURIComponent(BOARDS[currentBoard].sheetName)}`;
-      const res = await fetch(url);
-      const data = await res.json();
+      const data = await jsonp(`${config.scriptUrl}?action=get&sheet=${encodeURIComponent(BOARDS[currentBoard].sheetName)}`);
       if (data.success) {
         allPosts = data.posts || [];
         applyFilters();
         return;
       }
-    } catch(e) {
-      // fallback to sample
-    }
+    } catch(e) { console.error('loadPosts error:', e); }
   }
-  // Use sample data
   allPosts = [...(samplePosts[currentBoard] || [])];
   applyFilters();
 }
@@ -1463,14 +1461,7 @@ async function submitPost() {
 
   if (config.scriptUrl) {
     try {
-      const res = await fetch(config.scriptUrl, {
-        method: 'POST',
-        redirect: 'follow',
-        body: JSON.stringify({ action: 'add', sheet: BOARDS[currentBoard].sheetName, post }),
-        headers: { 'Content-Type': 'text/plain' }
-      });
-      const text = await res.text();
-      const data = JSON.parse(text);
+      const data = await jsonp(`${config.scriptUrl}?action=add&sheet=${encodeURIComponent(BOARDS[currentBoard].sheetName)}&post=${encodeURIComponent(JSON.stringify(post))}`);
       if (data.success) showToast('✅ Google Sheets에 저장되었습니다!');
       else showToast('⚠ 저장 실패: ' + (data.message || '다시 시도해주세요.'));
     } catch(e) {
