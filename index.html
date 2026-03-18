@@ -1006,7 +1006,7 @@
 // ============================================================
 // CONFIG & STATE (최상단 선언 — 로그인보다 먼저)
 // ============================================================
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx32abv4v6HsOJQVxN1Ir1Bf1S3ZRNlBECTm4v74ETvf2FekO3xCd2vyuwm2CkKYRFL/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzfH9SOJXy7-rwZMGxp4veuo-Skjzm-SzOQ515kWKk3j2oWM3fyTXLQ_zTH96Zkl7fh/exec';
 
 let config = {
   scriptUrl: SCRIPT_URL,
@@ -1080,31 +1080,32 @@ async function checkName() {
   const name = document.getElementById('name-input').value.trim();
   if (!name) { document.getElementById('name-error').textContent = '이름을 입력해주세요.'; return; }
   document.getElementById('name-error').textContent = '';
-
-  // 관리자 이름 체크 없이 바로 비밀번호 단계로
   showStep('loading');
 
-  // Sheets 연동 전이면 바로 비밀번호 단계로 (신규 처리)
   if (!config.scriptUrl) {
-    isNewUser = false;
-    showPwStep(name, false);
+    isNewUser = true;
+    showPwStep(name, true);
     return;
   }
 
   try {
-    const res = await fetch(`${config.scriptUrl}?action=getUser&name=${encodeURIComponent(name)}`);
-    const data = await res.json();
+    const res = await fetch(`${config.scriptUrl}?action=getUser&name=${encodeURIComponent(name)}`, {
+      method: 'GET',
+      redirect: 'follow'
+    });
+    const text = await res.text();
+    const data = JSON.parse(text);
     if (data.success) {
       isNewUser = !data.exists;
       showPwStep(name, isNewUser);
     } else {
       showStep('name');
-      document.getElementById('name-error').textContent = '서버 오류가 발생했습니다.';
+      document.getElementById('name-error').textContent = '서버 오류: ' + (data.message || '다시 시도해주세요.');
     }
   } catch(e) {
-    // 연결 실패 시 비밀번호 단계로
-    isNewUser = false;
-    showPwStep(name, false);
+    console.error('checkName error:', e);
+    showStep('name');
+    document.getElementById('name-error').textContent = 'Sheets 연결 오류. 잠시 후 다시 시도해주세요.';
   }
 }
 
@@ -1168,7 +1169,6 @@ async function handlePwStep() {
   }
 
   if (isNewUser) {
-    // 신규 사용자 등록
     const pwConfirm = document.getElementById('pw-confirm-input').value;
     if (pw !== pwConfirm) { setPwError('비밀번호가 일치하지 않습니다.'); return; }
     if (pw.length < 4) { setPwError('비밀번호는 4자 이상이어야 합니다.'); return; }
@@ -1176,19 +1176,24 @@ async function handlePwStep() {
     try {
       const res = await fetch(config.scriptUrl, {
         method: 'POST',
+        redirect: 'follow',
         body: JSON.stringify({ action: 'registerUser', name, password: pw }),
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'text/plain' }
       });
-      const data = await res.json();
+      const text = await res.text();
+      const data = JSON.parse(text);
       if (data.success) { loginSuccess(name, false); }
       else { showStep('pw'); setPwError('등록 실패: ' + (data.message || '다시 시도해주세요.')); }
-    } catch(e) { showStep('pw'); setPwError('서버 연결 오류. 다시 시도해주세요.'); }
+    } catch(e) { console.error('register error:', e); showStep('pw'); setPwError('서버 연결 오류. 다시 시도해주세요.'); }
   } else {
-    // 기존 사용자 로그인
     showStep('loading');
     try {
-      const res = await fetch(`${config.scriptUrl}?action=getUser&name=${encodeURIComponent(name)}`);
-      const data = await res.json();
+      const res = await fetch(`${config.scriptUrl}?action=getUser&name=${encodeURIComponent(name)}`, {
+        method: 'GET',
+        redirect: 'follow'
+      });
+      const text = await res.text();
+      const data = JSON.parse(text);
       showStep('pw');
       if (data.success && data.exists && data.password === pw) {
         localStorage.removeItem('board_lock');
@@ -1207,7 +1212,7 @@ async function handlePwStep() {
         document.getElementById('pw-input').value = '';
         setTimeout(() => document.getElementById('pw-input').classList.remove('error'), 600);
       }
-    } catch(e) { showStep('pw'); setPwError('서버 연결 오류. 다시 시도해주세요.'); }
+    } catch(e) { console.error('login error:', e); showStep('pw'); setPwError('서버 연결 오류. 다시 시도해주세요.'); }
   }
 }
 
@@ -1451,14 +1456,19 @@ async function submitPost() {
 
   if (config.scriptUrl) {
     try {
-      await fetch(config.scriptUrl, {
+      const res = await fetch(config.scriptUrl, {
         method: 'POST',
+        redirect: 'follow',
         body: JSON.stringify({ action: 'add', sheet: BOARDS[currentBoard].sheetName, post }),
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'text/plain' }
       });
-      showToast('✅ Google Sheets에 저장되었습니다!');
+      const text = await res.text();
+      const data = JSON.parse(text);
+      if (data.success) showToast('✅ Google Sheets에 저장되었습니다!');
+      else showToast('⚠ 저장 실패: ' + (data.message || '다시 시도해주세요.'));
     } catch(e) {
-      showToast('⚠ Sheets 저장 실패, 로컬에 저장됩니다.');
+      console.error('submitPost error:', e);
+      showToast('⚠ Sheets 저장 실패. 네트워크를 확인해주세요.');
     }
   } else {
     showToast('✅ 게시글이 등록되었습니다! (로컬 저장)');
