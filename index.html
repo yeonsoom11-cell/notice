@@ -956,16 +956,17 @@
         <textarea class="form-textarea" id="write-content" placeholder="내용을 입력하세요..."></textarea>
       </div>
       <div class="form-group">
-        <label class="form-label">첨부파일 <span style="font-weight:400;color:var(--text-muted);">(최대 5개, 각 5MB 이하 / Chrome·Edge·Firefox 권장)</span></label>
-        <div class="file-upload-area" id="drop-zone"
-          ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)"
-          onclick="document.getElementById('file-input').click()">
-          <div class="upload-icon">📎</div>
-          <p>클릭하거나 파일을 드래그하여 첨부</p>
-          <p style="font-size:12px;margin-top:4px;">파일 선택 시 Google Drive에 자동 업로드됩니다</p>
+        <label class="form-label">첨부파일 <span style="font-weight:400;color:var(--text-muted);">(Google Drive 링크)</span></label>
+        <div style="background:var(--info-bg);border:1px solid #b3d0f5;border-radius:var(--radius-sm);padding:10px 12px;font-size:12px;color:var(--info);margin-bottom:8px;line-height:1.7;">
+          📌 파일을 <a href="https://drive.google.com" target="_blank" style="color:var(--info);font-weight:500;">Google Drive</a>에 업로드 후,
+          파일 우클릭 → <b>공유</b> → <b>링크가 있는 모든 사용자</b> 설정 → <b>링크 복사</b> → 아래에 붙여넣기
         </div>
-        <input type="file" id="file-input" multiple style="display:none" onchange="onFileSelect(event)">
-        <div class="file-list" id="file-list"></div>
+        <div id="drive-link-list"></div>
+        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
+          <input type="text" class="form-input" id="drive-link-url" placeholder="Google Drive 링크를 붙여넣으세요" style="flex:2;min-width:180px;">
+          <input type="text" class="form-input" id="drive-link-name" placeholder="파일명 (예: 보고서.pdf)" style="flex:1;min-width:120px;">
+          <button type="button" class="btn btn-outline" onclick="addDriveLink()" style="white-space:nowrap;">+ 추가</button>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -1415,12 +1416,13 @@ function goPage(p) {
 // WRITE MODAL
 // ============================================================
 function openWriteModal() {
-  pendingFiles = [];
+  driveLinks = [];
   document.getElementById('write-title').value = '';
   document.getElementById('write-author').value = currentUser.name;
   document.getElementById('write-content').value = '';
-  document.getElementById('file-list').innerHTML = '';
-  document.getElementById('file-input').value = '';
+  document.getElementById('drive-link-list').innerHTML = '';
+  document.getElementById('drive-link-url').value = '';
+  document.getElementById('drive-link-name').value = '';
   // Populate category
   const sel = document.getElementById('write-category');
   sel.innerHTML = '<option value="">구분을 선택하세요</option>';
@@ -1445,21 +1447,7 @@ async function submitPost() {
 
   const now = new Date();
   const dateStr = now.toISOString().split('T')[0];
-  // 파일 먼저 업로드
-  if (pendingFiles.filter(f => f.status === 'pending').length > 0) {
-    showToast('파일 업로드 중...');
-    await uploadAllFiles();
-    const failed = pendingFiles.filter(f => f.status === 'error');
-    if (failed.length > 0) {
-      showToast(`⚠ ${failed.length}개 파일 업로드 실패. 다시 시도해주세요.`);
-      return;
-    }
-  }
-
-  // 업로드 완료된 파일 정보 수집 (name||url 형식)
-  const attachNames = pendingFiles
-    .filter(f => f.status === 'done' && f.url)
-    .map(f => f.name + '||' + f.url);
+  const attachNames = driveLinks.map(f => f.name + '||' + f.url);
 
   const post = {
     id: Date.now(),
@@ -1493,95 +1481,38 @@ async function submitPost() {
 }
 
 // ============================================================
-// FILE UPLOAD → Google Drive 자동 업로드
+// DRIVE LINK ATTACHMENTS
 // ============================================================
-let pendingFiles = []; // { file, name, status, url }
+let driveLinks = [];
 
-function onFileSelect(e) { addFiles(Array.from(e.target.files)); e.target.value = ''; }
-function onDragOver(e) { e.preventDefault(); document.getElementById('drop-zone').classList.add('drag-over'); }
-function onDragLeave(e) { document.getElementById('drop-zone').classList.remove('drag-over'); }
-function onDrop(e) {
-  e.preventDefault();
-  document.getElementById('drop-zone').classList.remove('drag-over');
-  addFiles(Array.from(e.dataTransfer.files));
+function addDriveLink() {
+  const url = document.getElementById('drive-link-url').value.trim();
+  const name = document.getElementById('drive-link-name').value.trim();
+  if (!url) { showToast('Google Drive 링크를 입력해주세요.'); return; }
+  if (!url.startsWith('http')) { showToast('올바른 링크를 입력해주세요.'); return; }
+  if (driveLinks.length >= 5) { showToast('최대 5개까지 첨부 가능합니다.'); return; }
+  const downloadUrl = convertDriveUrl(url);
+  driveLinks.push({ name: name || '첨부파일 ' + (driveLinks.length + 1), url: downloadUrl });
+  document.getElementById('drive-link-url').value = '';
+  document.getElementById('drive-link-name').value = '';
+  renderDriveLinkList();
 }
 
-function addFiles(files) {
-  files.forEach(f => {
-    if (pendingFiles.length >= 5) { showToast('최대 5개까지 첨부 가능합니다.'); return; }
-    if (f.size > 5 * 1024 * 1024) { showToast(`${f.name}: 5MB를 초과합니다.`); return; }
-    pendingFiles.push({ file: f, name: f.name, status: 'pending', url: null });
-  });
-  renderFileList();
+function removeDriveLink(i) { driveLinks.splice(i, 1); renderDriveLinkList(); }
+
+function renderDriveLinkList() {
+  const el = document.getElementById('drive-link-list');
+  el.innerHTML = driveLinks.map((f, i) => `
+    <div class="file-item">
+      <span>📎 ${escHtml(f.name)}</span>
+      <button class="file-item-remove" onclick="removeDriveLink(${i})">✕</button>
+    </div>`).join('');
 }
 
-function removeFile(i) { pendingFiles.splice(i, 1); renderFileList(); }
-
-function renderFileList() {
-  const el = document.getElementById('file-list');
-  el.innerHTML = pendingFiles.map((f, i) => {
-    const size = (f.file.size / 1024).toFixed(0) + 'KB';
-    const statusHtml = f.status === 'uploading'
-      ? `<span style="color:var(--info);font-size:12px;">업로드 중...</span>`
-      : f.status === 'done'
-      ? `<span style="color:var(--success);font-size:12px;">✓ 완료</span>`
-      : f.status === 'error'
-      ? `<span style="color:var(--danger);font-size:12px;">✗ 실패</span>`
-      : `<span style="color:var(--text-muted);font-size:12px;">${size}</span>`;
-    return `<div class="file-item">
-      <span>📄 ${escHtml(f.name)} ${statusHtml}</span>
-      ${f.status !== 'uploading' ? `<button class="file-item-remove" onclick="removeFile(${i})">✕</button>` : ''}
-    </div>`;
-  }).join('');
-}
-
-// 파일을 Base64로 변환
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = reader.result.split(',')[1];
-      resolve(base64);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-// 단일 파일 업로드
-async function uploadSingleFile(fileObj, index) {
-  pendingFiles[index].status = 'uploading';
-  renderFileList();
-  try {
-    const base64 = await fileToBase64(fileObj.file);
-    const data = await jsonp(
-      `${config.scriptUrl}?action=uploadFile` +
-      `&fileName=${encodeURIComponent(fileObj.name)}` +
-      `&mimeType=${encodeURIComponent(fileObj.file.type || 'application/octet-stream')}` +
-      `&fileData=${encodeURIComponent(base64)}`
-    );
-    if (data.success) {
-      pendingFiles[index].status = 'done';
-      pendingFiles[index].url = data.downloadUrl;
-      pendingFiles[index].viewUrl = data.viewUrl;
-    } else {
-      pendingFiles[index].status = 'error';
-      console.error('upload error:', data.message);
-    }
-  } catch(e) {
-    pendingFiles[index].status = 'error';
-    console.error('upload exception:', e);
-  }
-  renderFileList();
-}
-
-// 전체 파일 업로드 (등록 버튼 누를 때)
-async function uploadAllFiles() {
-  const pending = pendingFiles.filter(f => f.status === 'pending');
-  if (pending.length === 0) return;
-  await Promise.all(
-    pendingFiles.map((f, i) => f.status === 'pending' ? uploadSingleFile(f, i) : Promise.resolve())
-  );
+function convertDriveUrl(url) {
+  const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (match) return 'https://drive.google.com/uc?export=download&id=' + match[1];
+  return url;
 }
 
 // ============================================================
